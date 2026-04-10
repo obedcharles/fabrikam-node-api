@@ -1,0 +1,125 @@
+# azure-pipelines.yml
+trigger:
+- master
+
+jobs:
+- deployment: 'DeployToMyVM'
+  environment:
+    name: 'myLinuxVMs'
+    resourceName: 'myVM'
+    resourceType: 'VirtualMachine'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        # 1. Checkout code
+        - checkout: self
+          clean: true
+          fetchDepth: 1
+          displayName: 'Checkout code'
+
+        # 2. Verify code
+        - script: |
+            echo "Current directory: $(pwd)"
+            ls -la
+          displayName: 'Verify code files'
+
+        # 3. Install Node.js
+        - task: NodeTool@0
+          inputs:
+            versionSpec: '25.x'
+          displayName: 'Install Node.js'
+
+        # 4. Verify Node.js
+        - script: |
+            node --version
+            npm --version
+          displayName: 'Verify Node.js version'
+
+        # 5. Install dependencies
+        - script: npm install
+          displayName: 'Install npm dependencies'
+
+        # 6. Trigger Jenkins job
+        - task: JenkinsQueueJob@2
+          inputs:
+            serverEndpoint: 'MyJenkins'
+            jobName: 'fabrikam-node-build1'
+            captureConsole: true
+          displayName: 'Trigger Jenkins job'
+
+        # 7. Deploy and fix application
+        - script: |
+            echo "=== Check and fix app.js ==="
+            
+            # Create deployment directory
+            sudo mkdir -p /var/www/html/fabrikam-node
+            
+            # Copy code to deployment directory
+            sudo cp -r $(pwd)/* /var/www/html/fabrikam-node/
+            
+            cd /var/www/html/fabrikam-node
+            
+            # Check if app.listen exists, add if missing
+            if ! grep -q "app.listen" app.js; then
+              echo "app.js missing startup code, adding..."
+              sudo tee -a app.js << 'APPEND'
+            
+            // Auto-added by Azure Pipeline
+            const port = process.env.PORT || 3000;
+            app.listen(port, () => {
+              console.log(`Server running on port ${port}`);
+            });
+            APPEND
+              echo "Startup code added"
+            else
+              echo "Startup code already exists"
+            fi
+            
+            # Reinstall dependencies
+            sudo npm install --production || sudo npm install
+            
+            echo "=== Restart app with PM2 ==="
+            pm2 stop fabrikam-node 2>/dev/null || true
+            pm2 delete fabrikam-node 2>/dev/null || true
+            pm2 start app.js --name fabrikam-node
+            pm2 save
+            
+            echo "=== Verify application ==="
+            sleep 3
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "✅ Application is running normally"
+            else
+              echo "❌ Application failed to start"
+              pm2 logs fabrikam-node --lines 10
+              exit 1
+            fi
+          displayName: 'Deploy and fix application'
+
+        # 8. Configure Nginx
+        - script: |
+            echo "=== Configure Nginx ==="
+            
+            sudo tee /etc/nginx/sites-available/fabrikam-node > /dev/null << 'NGINX'
+            server {
+                listen 80;
+                server_name _;
+                location / {
+                    proxy_pass http://localhost:3000;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                }
+            }
+            NGINX
+            
+            sudo ln -sf /etc/nginx/sites-available/fabrikam-node /etc/nginx/sites-enabled/
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo nginx -t && sudo systemctl reload nginx
+            
+            echo "Nginx configuration complete"
+            echo "Access URL: http://$(curl -s ifconfig.me)"
+          displayName: 'Configure Nginx'
+
