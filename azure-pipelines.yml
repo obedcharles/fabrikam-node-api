@@ -104,15 +104,13 @@ jobs:
             server {
                 listen 80;
                 server_name _;
-                # Point this to your project folder
-                root /var/www/html/fabrikam-node;
-                index index.html index.js;
-
                 location / {
-                    # This looks for your files first. 
-                    # If you want to use the Node app on 3000, 
-                    # keep the proxy_pass but make sure the app starts!
-                    try_files $uri $uri/ =404;
+                    proxy_pass http://localhost:3000; # Point to your Node app
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
                 }
             }
             NGINX
