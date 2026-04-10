@@ -5,8 +5,8 @@ trigger:
 jobs:
 - deployment: 'DeployToMyVM'
   environment:
-    name: 'myLinuxVMs'
-    resourceName: 'myVM'
+    name: 'linuxvm'
+    resourceName: 'v7'
     resourceType: 'VirtualMachine'
   strategy:
     runOnce:
