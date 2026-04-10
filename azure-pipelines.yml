@@ -44,7 +44,7 @@ jobs:
         - task: JenkinsQueueJob@2
           inputs:
             serverEndpoint: 'MyJenkins'
-            jobName: 'fabrikam-node-build1'
+            jobName: 'jenkins devops'
             captureConsole: true
           displayName: 'Trigger Jenkins job'
 
